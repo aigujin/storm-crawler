@@ -34,6 +34,9 @@ config:
 
   # time bucket to use for the metrics sent by the Fetcher
   fetcher.metrics.time.bucket.secs: 10
+  
+  # Purge internal queues of tuples which have already reached time out
+  fetcher.kill.zombies: true
 
   # alternative values are "byIP" and "byDomain"
   partition.url.mode: "byHost"

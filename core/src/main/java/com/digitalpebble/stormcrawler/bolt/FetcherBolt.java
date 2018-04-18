@@ -393,7 +393,8 @@ public class FetcherBolt extends StatusEmitterBolt {
         // whether the default delay is used even if the robots.txt
         // specifies a shorter crawl-delay
         private final boolean crawlDelayForce;
-        private int threadNum;
+        private final int threadNum;
+        private int messageTimeout = -1;
 
         public FetcherThread(Config conf, int num) {
             this.setDaemon(true); // don't hang JVM on exit
@@ -406,6 +407,12 @@ public class FetcherBolt extends StatusEmitterBolt {
             this.crawlDelayForce = ConfUtils.getBoolean(conf,
                     "fetcher.server.delay.force", false);
             this.threadNum = num;
+            if (ConfUtils.getBoolean(conf, "fetcher.kill.zombies", true)
+                    && ConfUtils.getBoolean(conf,
+                            "topology.enable.message.timeouts", false)) {
+                this.messageTimeout = ConfUtils.getInt(conf,
+                        "topology.message.timeout.secs", -1) * 1000;
+            }
         }
 
         @Override
@@ -555,6 +562,18 @@ public class FetcherBolt extends StatusEmitterBolt {
 
                     long start = System.currentTimeMillis();
                     long timeInQueues = start - fit.creationTime;
+
+                    // the tuple has been waiting for too long and has probably
+                    // already been failed by the spout - no point in fetching
+                    if (messageTimeout > 0 && timeInQueues > messageTimeout) {
+                        asap = true;
+                        LOG.debug(
+                                "timeout_expired_in_queues: {} was in queue {} for {}",
+                                fit.url, fit.queueID, timeInQueues);
+                        eventCounter.scope("timeout_expired_in_queues").incrBy(
+                                1);
+                        continue;
+                    }
 
                     ProtocolResponse response = protocol.getProtocolOutput(
                             fit.url, metadata);
